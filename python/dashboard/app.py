@@ -35,6 +35,11 @@ from python.analytics.frtb_sensitivities import (  # noqa: E402
 )
 from python.data.load_prices import calculate_returns, load_price_history  # noqa: E402
 
+from python.analytics.backtesting import (  # noqa: E402
+    create_validation_report,
+    rolling_historical_var_backtest,
+    summarize_backtest,
+)
 
 st.set_page_config(
     page_title="FRTB-Lite Market Risk Engine",
@@ -60,6 +65,7 @@ def format_currency(value: float) -> str:
 
 portfolio, factors, prices, scenarios = load_sample_data()
 returns = calculate_returns(prices)
+
 pnl = compute_portfolio_pnl(portfolio, returns, factors)
 losses = -pnl
 
@@ -69,6 +75,26 @@ es_975 = expected_shortfall(losses, 0.975)
 stress = compute_stress_losses(portfolio, factors, scenarios)
 stress_detail = compute_stress_detail(portfolio, factors, scenarios)
 es_contrib = compute_es_contributions(portfolio, returns, factors)
+
+backtest = rolling_historical_var_backtest(
+    portfolio=portfolio,
+    returns=returns,
+    factors=factors,
+    confidence_level=0.99,
+    lookback_window=60,
+    min_observations=30,
+)
+
+backtest_summary = summarize_backtest(
+    backtest=backtest,
+    confidence_level=0.99,
+    lookback_window=60,
+)
+
+validation_report_text = create_validation_report(
+    summary=backtest_summary,
+    backtest=backtest,
+)
 
 frtb_sensitivities = compute_frtb_lite_sensitivities(
     portfolio=portfolio,
@@ -247,32 +273,131 @@ with tab_frtb:
     )
 
 with tab_backtest:
-    st.subheader("Backtesting and validation")
+    st.subheader("Backtesting and model validation")
     st.write(
-        "Backtesting compares predicted VaR against realized P&L. "
-        "This starter page displays the concept; the rolling implementation lives in "
-        "`python/analytics/run_backtest.py`."
+        "This tab compares rolling 99% historical VaR forecasts against realized "
+        "portfolio losses. Exceptions occur when realized loss is greater than "
+        "the VaR forecast."
     )
 
-    backtest_frame = pd.DataFrame({"pnl": pnl, "loss": losses})
-    backtest_frame["static_var_99"] = var_99
-    backtest_frame["exception"] = backtest_frame["loss"] > backtest_frame["static_var_99"]
+    status = str(backtest_summary["validation_status"]).upper()
 
-    exception_count = int(backtest_frame["exception"].sum())
-    exception_rate = exception_count / len(backtest_frame)
+    metric_1, metric_2, metric_3, metric_4 = st.columns(4)
+    metric_1.metric("Valid Observations", f"{backtest_summary['observation_count']}")
+    metric_2.metric("VaR Exceptions", f"{backtest_summary['exception_count']}")
+    metric_3.metric("Observed Exception Rate", f"{backtest_summary['observed_exception_rate']:.2%}")
+    metric_4.metric("Validation Status", status)
 
-    col_a, col_b = st.columns(2)
-    col_a.metric("Static VaR Exceptions", f"{exception_count}")
-    col_b.metric("Exception Rate", f"{exception_rate:.2%}")
+    metric_5, metric_6, metric_7 = st.columns(3)
+    metric_5.metric("Kupiec p-value", f"{backtest_summary['kupiec_p_value']:.4f}")
+    metric_6.metric("Average VaR Forecast", format_currency(backtest_summary["average_var"]))
+    metric_7.metric("Worst Realized Loss", format_currency(backtest_summary["worst_realized_loss"]))
 
-    fig = px.line(
-        backtest_frame.reset_index(),
-        x="date",
-        y=["loss", "static_var_99"],
-        title="Realized loss versus static 99% VaR threshold",
+    valid_backtest = backtest.dropna(subset=["var_forecast"]).copy()
+
+    if valid_backtest.empty:
+        st.warning("Not enough observations to run a valid rolling VaR backtest.")
+    else:
+        left, right = st.columns([1.4, 1])
+
+        with left:
+            fig = px.line(
+                valid_backtest,
+                x="date",
+                y=["realized_loss", "var_forecast"],
+                title="Realized loss vs rolling 99% VaR forecast",
+                labels={
+                    "value": "Loss / VaR",
+                    "date": "Date",
+                    "variable": "Series",
+                },
+            )
+
+            exceptions = valid_backtest[valid_backtest["exception"]]
+
+            if not exceptions.empty:
+                fig.add_scatter(
+                    x=exceptions["date"],
+                    y=exceptions["realized_loss"],
+                    mode="markers",
+                    name="VaR exceptions",
+                )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+        with right:
+            fig = px.bar(
+                valid_backtest,
+                x="date",
+                y="exception_severity",
+                title="Exception severity",
+                labels={
+                    "exception_severity": "Loss above VaR",
+                    "date": "Date",
+                },
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        left_2, right_2 = st.columns([1, 1])
+
+        with left_2:
+            fig = px.line(
+                valid_backtest,
+                x="date",
+                y="rolling_exception_rate_20d",
+                title="Rolling 20-day exception rate",
+                labels={
+                    "rolling_exception_rate_20d": "Exception rate",
+                    "date": "Date",
+                },
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        with right_2:
+            exceptions_table = valid_backtest[valid_backtest["exception"]][
+                ["date", "realized_loss", "var_forecast", "exception_severity"]
+            ].copy()
+
+            st.markdown("**VaR exception dates**")
+
+            if exceptions_table.empty:
+                st.success("No VaR exceptions observed in the valid backtest window.")
+            else:
+                st.dataframe(
+                    exceptions_table,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        st.markdown("**Backtest results table**")
+        st.dataframe(
+            valid_backtest[
+                [
+                    "date",
+                    "realized_pnl",
+                    "realized_loss",
+                    "var_forecast",
+                    "exception",
+                    "exception_severity",
+                    "rolling_exception_count_20d",
+                    "rolling_exception_rate_20d",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    st.markdown("### Generated model-validation report")
+    st.download_button(
+        label="Download validation report",
+        data=validation_report_text,
+        file_name="model_validation_report.md",
+        mime="text/markdown",
     )
-    st.plotly_chart(fig, use_container_width=True)
 
+    with st.expander("Preview validation report", expanded=False):
+        st.markdown(validation_report_text)
+    
 with tab_methodology:
     st.subheader("Methodology and limitations")
     st.markdown(
