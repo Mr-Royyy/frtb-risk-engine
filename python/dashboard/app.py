@@ -41,6 +41,11 @@ from python.analytics.backtesting import (  # noqa: E402
     summarize_backtest,
 )
 
+from python.analytics.regime_detection import (  # noqa: E402
+    calculate_regime_features,
+    classify_regime,
+)
+
 st.set_page_config(
     page_title="FRTB-Lite Market Risk Engine",
     page_icon="📉",
@@ -96,6 +101,13 @@ validation_report_text = create_validation_report(
     backtest=backtest,
 )
 
+regime_features = calculate_regime_features(
+    returns=returns,
+    window=30,
+)
+
+regime_classification = classify_regime(regime_features)
+
 frtb_sensitivities = compute_frtb_lite_sensitivities(
     portfolio=portfolio,
     factors=factors,
@@ -120,12 +132,13 @@ card_3.metric("97.5% Expected Shortfall", format_currency(es_975))
 card_4.metric("Worst Stress Loss", format_currency(worst_stress))
 card_5.metric("FRTB-Lite Charge", format_currency(total_capital_style_charge))
 
-tab_overview, tab_stress, tab_frtb, tab_backtest, tab_methodology = st.tabs(
+tab_overview, tab_stress, tab_frtb, tab_backtest, tab_regime, tab_methodology = st.tabs(
     [
         "Portfolio Overview",
         "Stress Testing",
         "FRTB-Lite Sensitivities",
         "Backtesting",
+        "Regime Detection",
         "Methodology",
     ]
 )
@@ -397,7 +410,146 @@ with tab_backtest:
 
     with st.expander("Preview validation report", expanded=False):
         st.markdown(validation_report_text)
-    
+
+with tab_regime:
+    st.subheader("Market regime detection")
+    st.write(
+        "This tab classifies the current market environment using rolling risk "
+        "features such as realized volatility, cross-asset correlation, drawdown, "
+        "dispersion, and volatility-of-volatility."
+    )
+
+    regime_label = str(regime_classification["regime"]).upper()
+    regime_score = float(regime_classification["regime_score"])
+    latest_features = regime_classification["latest_features"]
+    feature_scores = regime_classification["feature_scores"]
+
+    kpi_1, kpi_2, kpi_3 = st.columns(3)
+    kpi_1.metric("Current Regime", regime_label)
+    kpi_2.metric("Regime Score", f"{regime_score:.2f}")
+    kpi_3.metric("Signal Date", regime_classification["date"])
+
+    st.info(regime_classification["recommendation"])
+
+    feature_driver_frame = pd.DataFrame(
+        [
+            {
+                "feature": "Realized Volatility",
+                "latest_value": latest_features["realized_volatility"],
+                "risk_score": feature_scores["volatility_score"],
+            },
+            {
+                "feature": "Average Correlation",
+                "latest_value": latest_features["avg_correlation"],
+                "risk_score": feature_scores["correlation_score"],
+            },
+            {
+                "feature": "Maximum Drawdown",
+                "latest_value": latest_features["max_drawdown"],
+                "risk_score": feature_scores["drawdown_score"],
+            },
+            {
+                "feature": "Dispersion",
+                "latest_value": latest_features["dispersion"],
+                "risk_score": feature_scores["dispersion_score"],
+            },
+            {
+                "feature": "Volatility of Volatility",
+                "latest_value": latest_features["vol_of_vol"],
+                "risk_score": feature_scores["vol_of_vol_score"],
+            },
+        ]
+    ).sort_values("risk_score", ascending=False)
+
+    left, right = st.columns([1.2, 1])
+
+    with left:
+        fig = px.line(
+            regime_features,
+            x="date",
+            y=["realized_volatility", "dispersion", "vol_of_vol"],
+            title="Rolling volatility, dispersion, and vol-of-vol",
+            labels={
+                "value": "Feature value",
+                "date": "Date",
+                "variable": "Feature",
+            },
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with right:
+        fig = px.bar(
+            feature_driver_frame,
+            x="feature",
+            y="risk_score",
+            title="Current regime feature drivers",
+            labels={
+                "feature": "Feature",
+                "risk_score": "Risk score",
+            },
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    left_2, right_2 = st.columns([1, 1])
+
+    with left_2:
+        fig = px.line(
+            regime_features,
+            x="date",
+            y="avg_correlation",
+            title="Rolling average cross-asset correlation",
+            labels={
+                "avg_correlation": "Average correlation",
+                "date": "Date",
+            },
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with right_2:
+        fig = px.line(
+            regime_features,
+            x="date",
+            y="max_drawdown",
+            title="Rolling maximum drawdown",
+            labels={
+                "max_drawdown": "Maximum drawdown",
+                "date": "Date",
+            },
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("**Latest feature values and risk scores**")
+    st.dataframe(
+        feature_driver_frame,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.markdown("**Regime feature history**")
+    st.dataframe(
+        regime_features[
+            [
+                "date",
+                "market_return",
+                "realized_volatility",
+                "avg_correlation",
+                "max_drawdown",
+                "dispersion",
+                "vol_of_vol",
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.warning(
+        "This is a transparent regime-scoring model, not a production crisis "
+        "classifier. It is meant to support risk monitoring by identifying when "
+        "volatility, correlation, drawdown, or dispersion move into higher-risk "
+        "ranges."
+    )
+
+
 with tab_methodology:
     st.subheader("Methodology and limitations")
     st.markdown(
@@ -410,6 +562,11 @@ with tab_methodology:
 
         **FRTB-lite sensitivities:** simplified delta, vega, and curvature-style outputs.
         These are educational approximations and not complete Basel calculations.
+
+        **Backtesting:** compares rolling VaR forecasts against realized losses and tracks exceptions.
+
+        **Regime detection:** classifies the market environment using realized volatility,
+        average correlation, drawdown, dispersion, and volatility-of-volatility.
 
         **Main limitations:** no full regulatory bucket/correlation framework yet, no complete
         option repricing yet, and no rates/credit curve construction yet.
