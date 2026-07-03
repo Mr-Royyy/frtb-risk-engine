@@ -110,6 +110,107 @@ def compute_portfolio_pnl(
 
     return pnl
 
+def compute_es_contributions(
+    portfolio: pd.DataFrame,
+    returns: pd.DataFrame,
+    factors: pd.DataFrame,
+    confidence_level: float = 0.975,
+) -> pd.DataFrame:
+    """
+    Calculate position-level contributions to Expected Shortfall.
+
+    Expected Shortfall looks at the average loss on the worst tail days. This
+    function breaks those tail losses down by position, so the dashboard can
+    explain which holdings are driving portfolio tail risk.
+
+    Parameters
+    ----------
+    portfolio:
+        Portfolio file with position_id, ticker, quantity, price, and asset_type.
+
+    returns:
+        Historical return matrix. Columns should match risk-factor names from
+        the factor mapping file.
+
+    factors:
+        Factor mapping file that maps each ticker to a primary risk factor.
+
+    confidence_level:
+        Tail confidence level. The default is 97.5%, matching the dashboard's
+        Expected Shortfall metric.
+
+    Returns
+    -------
+    pd.DataFrame
+        Position-level ES contribution table.
+    """
+    factors_by_ticker = factors.set_index("ticker").fillna("")
+    position_pnl = pd.DataFrame(index=returns.index)
+
+    for _, position in portfolio.iterrows():
+        ticker = str(position["ticker"])
+        position_id = str(position["position_id"])
+        market_value = float(position["quantity"] * position["price"])
+
+        if ticker in factors_by_ticker.index:
+            primary_factor = str(factors_by_ticker.loc[ticker, "primary_factor"])
+            secondary_factor = str(factors_by_ticker.loc[ticker, "secondary_factor"])
+            currency_factor = str(factors_by_ticker.loc[ticker, "currency_factor"])
+        else:
+            primary_factor = ticker
+            secondary_factor = ""
+            currency_factor = ""
+
+        pnl_series = pd.Series(0.0, index=returns.index)
+
+        if primary_factor in returns.columns:
+            pnl_series += market_value * returns[primary_factor]
+
+        if secondary_factor in returns.columns:
+            pnl_series += 0.50 * market_value * returns[secondary_factor]
+
+        if currency_factor in returns.columns:
+            pnl_series += market_value * returns[currency_factor]
+
+        position_pnl[position_id] = pnl_series
+
+    portfolio_pnl = position_pnl.sum(axis=1)
+    losses = -portfolio_pnl
+
+    var_threshold = losses.quantile(confidence_level)
+    tail_mask = losses >= var_threshold
+
+    if tail_mask.sum() == 0:
+        tail_mask = losses == losses.max()
+
+    tail_position_losses = -position_pnl.loc[tail_mask]
+    es_by_position = tail_position_losses.mean(axis=0)
+
+    total_es = float(es_by_position.sum())
+
+    rows = []
+
+    for _, position in portfolio.iterrows():
+        position_id = str(position["position_id"])
+        ticker = str(position["ticker"])
+        asset_type = str(position["asset_type"])
+        market_value = float(position["quantity"] * position["price"])
+        contribution = float(es_by_position.get(position_id, 0.0))
+
+        contribution_pct = contribution / total_es if total_es != 0 else 0.0
+
+        rows.append(
+            {
+                "position_id": position_id,
+                "ticker": ticker,
+                "asset_type": asset_type,
+                "market_value": market_value,
+                "es_contribution": contribution,
+                "es_contribution_pct": contribution_pct,
+            }
+        )
+
+    return pd.DataFrame(rows).sort_values("es_contribution", ascending=False)
 
 def compute_stress_losses(
     portfolio: pd.DataFrame,
@@ -164,6 +265,85 @@ def compute_stress_losses(
 
     return pd.DataFrame(rows).sort_values("stress_loss", ascending=False)
 
+
+def compute_stress_detail(
+    portfolio: pd.DataFrame,
+    factors: pd.DataFrame,
+    scenarios: dict[str, Any],
+) -> pd.DataFrame:
+    """
+    Calculate position-level stress P&L for every scenario.
+
+    This creates a drilldown table showing which positions drive each stress
+    scenario loss. The output is used by the Streamlit dashboard so the user can
+    move from portfolio-level stress loss to position-level contributors.
+
+    Stress loss convention:
+    - A negative shock on a long equity position creates a positive loss.
+    - A positive FX move can create either a gain or loss depending on exposure.
+    """
+    factors_by_ticker = factors.set_index("ticker").fillna("")
+    rows: list[dict[str, Any]] = []
+
+    for scenario_name, scenario in scenarios.items():
+        description = scenario.get("description", "")
+        shocks = scenario.get("shocks", {})
+
+        for _, position in portfolio.iterrows():
+            ticker = str(position["ticker"])
+            asset_type = str(position["asset_type"])
+            market_value = float(position["quantity"] * position["price"])
+
+            if ticker in factors_by_ticker.index:
+                primary_factor = str(factors_by_ticker.loc[ticker, "primary_factor"])
+                secondary_factor = str(factors_by_ticker.loc[ticker, "secondary_factor"])
+                currency_factor = str(factors_by_ticker.loc[ticker, "currency_factor"])
+                vol_factor = str(factors_by_ticker.loc[ticker, "vol_factor"])
+                bucket = str(factors_by_ticker.loc[ticker, "bucket"])
+            else:
+                primary_factor = ticker
+                secondary_factor = ""
+                currency_factor = ""
+                vol_factor = ""
+                bucket = "UNMAPPED"
+
+            primary_shock = float(shocks.get(primary_factor, 0.0)) if primary_factor else 0.0
+            secondary_shock = float(shocks.get(secondary_factor, 0.0)) if secondary_factor else 0.0
+            currency_shock = float(shocks.get(currency_factor, 0.0)) if currency_factor else 0.0
+            vol_shock = float(shocks.get(vol_factor, 0.0)) if vol_factor else 0.0
+
+            combined_shock = primary_shock + 0.50 * secondary_shock + currency_shock
+
+            if asset_type.lower() == "option":
+                combined_shock += 0.25 * vol_shock
+
+            stress_pnl = market_value * combined_shock
+            stress_loss = -stress_pnl
+
+            rows.append(
+                {
+                    "scenario": scenario_name,
+                    "description": description,
+                    "position_id": position["position_id"],
+                    "ticker": ticker,
+                    "asset_type": asset_type,
+                    "bucket": bucket,
+                    "market_value": market_value,
+                    "primary_factor": primary_factor,
+                    "primary_shock": primary_shock,
+                    "secondary_factor": secondary_factor,
+                    "secondary_shock": secondary_shock,
+                    "currency_factor": currency_factor,
+                    "currency_shock": currency_shock,
+                    "vol_factor": vol_factor,
+                    "vol_shock": vol_shock,
+                    "combined_shock": combined_shock,
+                    "stress_pnl": stress_pnl,
+                    "stress_loss": stress_loss,
+                }
+            )
+
+    return pd.DataFrame(rows).sort_values("stress_loss", ascending=False)
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
