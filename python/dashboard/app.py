@@ -20,11 +20,18 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
 from python.analytics.run_risk import (  # noqa: E402
+    compute_es_contributions,
     compute_portfolio_pnl,
+    compute_stress_detail,
     compute_stress_losses,
     expected_shortfall,
     historical_var,
     load_scenarios,
+)
+
+from python.analytics.frtb_sensitivities import (  # noqa: E402
+    aggregate_by_bucket,
+    compute_frtb_lite_sensitivities,
 )
 from python.data.load_prices import calculate_returns, load_price_history  # noqa: E402
 
@@ -60,7 +67,19 @@ market_value = float((portfolio["quantity"] * portfolio["price"]).sum())
 var_99 = historical_var(losses, 0.99)
 es_975 = expected_shortfall(losses, 0.975)
 stress = compute_stress_losses(portfolio, factors, scenarios)
+stress_detail = compute_stress_detail(portfolio, factors, scenarios)
+es_contrib = compute_es_contributions(portfolio, returns, factors)
+
+frtb_sensitivities = compute_frtb_lite_sensitivities(
+    portfolio=portfolio,
+    factors=factors,
+    valuation_date="2026-07-03",
+)
+frtb_bucket_summary = aggregate_by_bucket(frtb_sensitivities)
+
 worst_stress = float(stress["stress_loss"].max())
+total_capital_style_charge = float(frtb_bucket_summary["capital_style_charge"].sum())
+largest_frtb_bucket = str(frtb_bucket_summary.iloc[0]["bucket"])
 
 st.title("FRTB-Lite Market Risk Engine")
 st.caption(
@@ -68,11 +87,12 @@ st.caption(
     "Educational FRTB-inspired project, not a full regulatory capital calculator."
 )
 
-card_1, card_2, card_3, card_4 = st.columns(4)
+card_1, card_2, card_3, card_4, card_5 = st.columns(5)
 card_1.metric("Portfolio Market Value", format_currency(market_value))
 card_2.metric("1-Day 99% VaR", format_currency(var_99))
 card_3.metric("97.5% Expected Shortfall", format_currency(es_975))
 card_4.metric("Worst Stress Loss", format_currency(worst_stress))
+card_5.metric("FRTB-Lite Charge", format_currency(total_capital_style_charge))
 
 tab_overview, tab_stress, tab_frtb, tab_backtest, tab_methodology = st.tabs(
     [
@@ -133,30 +153,98 @@ with tab_stress:
 with tab_frtb:
     st.subheader("Simplified FRTB-lite sensitivities")
     st.write(
-        "This tab is a placeholder for the standardized-approach-inspired layer. "
-        "The current starter repo shows the intended output shape. Future work should "
-        "add true option Greeks, risk weights, bucket aggregation, and curvature shocks."
+        "This tab calculates simplified delta, vega, and curvature-style exposures "
+        "by position and bucket. It is inspired by standardized market-risk concepts, "
+        "but it is not a full Basel/FRTB regulatory capital calculator."
     )
 
-    sens = portfolio.merge(factors, on="ticker", how="left")
-    sens["market_value"] = sens["quantity"] * sens["price"]
-    sens["delta_exposure"] = sens["market_value"]
-    sens["vega_proxy"] = sens.apply(
-        lambda row: abs(row["market_value"]) * 0.10 if row["asset_type"] == "Option" else 0.0,
-        axis=1,
-    )
-    sens["curvature_proxy"] = sens.apply(
-        lambda row: abs(row["market_value"]) * 0.02 if row["asset_type"] == "Option" else 0.0,
-        axis=1,
+    kpi_1, kpi_2, kpi_3 = st.columns(3)
+    kpi_1.metric("Capital-Style Charge", format_currency(total_capital_style_charge))
+    kpi_2.metric("Largest Risk Bucket", largest_frtb_bucket)
+    kpi_3.metric("Risk Buckets", f"{len(frtb_bucket_summary)}")
+
+    left, right = st.columns([1.2, 1])
+
+    with left:
+        fig = px.bar(
+            frtb_bucket_summary,
+            x="bucket",
+            y="capital_style_charge",
+            title="Capital-style charge by FRTB-lite bucket",
+            hover_data=[
+                "market_value",
+                "delta_exposure",
+                "vega_exposure",
+                "curvature_exposure",
+            ],
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with right:
+        charge_breakdown = frtb_bucket_summary[
+            ["bucket", "weighted_delta", "weighted_vega", "weighted_curvature"]
+        ].melt(
+            id_vars="bucket",
+            var_name="risk_component",
+            value_name="weighted_charge",
+        )
+
+        fig = px.bar(
+            charge_breakdown,
+            x="bucket",
+            y="weighted_charge",
+            color="risk_component",
+            title="Delta / vega / curvature-style charge split",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("**Bucket summary**")
+    st.dataframe(
+        frtb_bucket_summary[
+            [
+                "bucket",
+                "positions",
+                "market_value",
+                "delta_exposure",
+                "vega_exposure",
+                "curvature_exposure",
+                "weighted_delta",
+                "weighted_vega",
+                "weighted_curvature",
+                "capital_style_charge",
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True,
     )
 
-    bucket_summary = (
-        sens.groupby("bucket", dropna=False)[["delta_exposure", "vega_proxy", "curvature_proxy"]]
-        .sum()
-        .reset_index()
+    st.markdown("**Position-level sensitivities**")
+    st.dataframe(
+        frtb_sensitivities[
+            [
+                "position_id",
+                "asset_type",
+                "ticker",
+                "bucket",
+                "market_value",
+                "delta",
+                "vega",
+                "delta_exposure",
+                "vega_exposure",
+                "curvature_exposure",
+                "capital_style_charge",
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True,
     )
 
-    st.dataframe(bucket_summary, use_container_width=True, hide_index=True)
+    st.info(
+        "Interpretation: delta exposure captures linear price sensitivity, "
+        "vega exposure captures option sensitivity to implied volatility, and "
+        "curvature exposure captures simplified nonlinear option loss under "
+        "up/down shocks."
+    )
 
 with tab_backtest:
     st.subheader("Backtesting and validation")
