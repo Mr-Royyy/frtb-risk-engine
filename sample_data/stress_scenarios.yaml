@@ -1,0 +1,41 @@
+scenarios:
+  equity_crash:
+    description: "Broad equity selloff with technology underperformance."
+    shocks:
+      US_MARKET_RETURN: -0.12
+      TECH_SECTOR_RETURN: -0.18
+      FINANCIALS_SECTOR_RETURN: -0.10
+      USDCAD_RETURN: 0.03
+      AAPL_IV: 0.25
+      MSFT_IV: 0.20
+
+  volatility_spike:
+    description: "Sharp volatility shock, especially affecting option positions."
+    shocks:
+      AAPL_IV: 0.40
+      MSFT_IV: 0.35
+      US_MARKET_RETURN: -0.04
+      TECH_SECTOR_RETURN: -0.06
+
+  fx_shock:
+    description: "USD/CAD shock affecting foreign-currency exposure."
+    shocks:
+      USDCAD_RETURN: 0.06
+
+  rates_inflation_shock:
+    description: "Macro shock with equity weakness and currency movement."
+    shocks:
+      US_MARKET_RETURN: -0.08
+      TECH_SECTOR_RETURN: -0.12
+      FINANCIALS_SECTOR_RETURN: -0.06
+      USDCAD_RETURN: 0.04
+
+  covid_style_replay:
+    description: "Simplified historical crisis replay inspired by cross-asset stress."
+    shocks:
+      US_MARKET_RETURN: -0.16
+      TECH_SECTOR_RETURN: -0.13
+      FINANCIALS_SECTOR_RETURN: -0.20
+      USDCAD_RETURN: 0.05
+      AAPL_IV: 0.30
+      MSFT_IV: 0.28

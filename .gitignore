@@ -1,0 +1,26 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# C++/CMake
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Data/output artifacts
+outputs/
+*.parquet
+
+# OS/editor
+.DS_Store
+.vscode/.ropeproject

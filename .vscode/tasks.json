@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Validate sample portfolio",
+      "type": "shell",
+      "command": "python python/data/validate_portfolio.py --portfolio sample_data/sample_portfolio.csv --factors sample_data/factor_mapping.csv",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Python risk sample",
+      "type": "shell",
+      "command": "python python/analytics/run_risk.py --portfolio sample_data/sample_portfolio.csv --prices sample_data/sample_prices.csv --factors sample_data/factor_mapping.csv --scenarios sample_data/stress_scenarios.yaml",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Configure CMake",
+      "type": "shell",
+      "command": "cmake -S cpp -B build",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build C++",
+      "type": "shell",
+      "command": "cmake --build build",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run C++ tests",
+      "type": "shell",
+      "command": "ctest --test-dir build --output-on-failure",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Launch dashboard",
+      "type": "shell",
+      "command": "streamlit run python/dashboard/app.py",
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}
