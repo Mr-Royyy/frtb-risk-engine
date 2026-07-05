@@ -20,13 +20,13 @@ tested independently from the dashboard.
 
 | Engine | Elapsed Time | VaR Loss | Expected Shortfall | Mean Loss | Tail Observations |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| C++ Monte Carlo | 152.0 ms | $7333.31 | $8386.95 | $-9.91 | 2501 |
-| Python/Numpy Baseline | 76.0 ms | $7,382.67 | $8,418.87 | $8.11 | 2500 |
+| C++ Monte Carlo | 13.0 ms | $7333.36 | $8424.13 | $-2.68 | 2501 |
+| Python/Numpy Baseline | 47.0 ms | $7,382.67 | $8,418.87 | $8.11 | 2500 |
 
 Relative runtime:
 
 ```text
-0.50x
+3.62x
 ```
 
 ## C++ benchmark output
@@ -36,11 +36,11 @@ C++ Monte Carlo Benchmark
 -------------------------
 Simulations: 250000
 Confidence: 99.00%
-VaR loss: $7333.31
-Expected Shortfall: $8386.95
-Mean loss: $-9.91
+VaR loss: $7333.36
+Expected Shortfall: $8424.13
+Mean loss: $-2.68
 Tail observations: 2501
-Elapsed time: 152 ms
+Elapsed time: 13 ms
 ```
 
 ## Python benchmark output
@@ -54,7 +54,7 @@ VaR loss: $7,382.67
 Expected Shortfall: $8,418.87
 Mean loss: $8.11
 Tail observations: 2500
-Elapsed time: 76 ms
+Elapsed time: 47 ms
 ```
 
 ## Interpretation

@@ -25,17 +25,23 @@ struct MonteCarloResult {
 /**
  * @brief Monte Carlo engine for market-risk loss simulation.
  *
- * The engine simulates correlated normal factor returns using a covariance
- * matrix and a Cholesky decomposition. Portfolio P&L is then approximated as:
+ * The current engine models a linear portfolio under multivariate normal factor
+ * returns. Because a linear combination of normal factors is also normal, the
+ * engine compresses the factor covariance matrix into a portfolio-level
+ * variance:
  *
- *   P&L = sum(exposure_i * factor_return_i)
+ *   portfolio_variance = exposures^T * covariance * exposures
+ *
+ * It then simulates portfolio-level P&L directly. This is faster than
+ * generating a full correlated factor vector for every path and is
+ * mathematically equivalent for the current linear-normal model.
  *
  * Loss is defined as:
  *
  *   loss = -P&L
  *
- * This is intentionally simple and transparent. It is useful for demonstrating
- * the C++ risk-core architecture before adding more advanced pricing models.
+ * Future versions can add full path simulation again for nonlinear instruments,
+ * options repricing, and scenario-dependent factor shocks.
  */
 class MonteCarloEngine {
  public:
@@ -71,7 +77,7 @@ class MonteCarloEngine {
       std::size_t simulations,
       std::uint32_t seed = 42);
 
- private:
+  private:
   /**
    * @brief Compute lower-triangular Cholesky factor.
    *
@@ -81,6 +87,24 @@ class MonteCarloEngine {
    */
   [[nodiscard]] static std::vector<std::vector<double>> cholesky_decompose(
       const std::vector<std::vector<double>>& matrix);
+
+  /**
+   * @brief Compute portfolio variance from exposures and covariance.
+   *
+   * For a linear portfolio:
+   *
+   *   P&L = exposures dot factor_returns
+   *
+   * and multivariate normal factor returns:
+   *
+   *   portfolio_variance = exposures^T * covariance * exposures
+   *
+   * This allows the engine to simulate portfolio-level losses directly instead
+   * of generating a full correlated factor vector for every path.
+   */
+  [[nodiscard]] static double compute_portfolio_variance(
+      const std::vector<double>& exposures,
+      const std::vector<std::vector<double>>& covariance);
 
   /**
    * @brief Validate exposure vector and covariance matrix dimensions.

@@ -1,7 +1,5 @@
 #include "monte_carlo_engine.hpp"
 
-#include "es_engine.hpp"
-#include "var_engine.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -77,6 +75,27 @@ std::vector<std::vector<double>> MonteCarloEngine::cholesky_decompose(
   return lower;
 }
 
+double MonteCarloEngine::compute_portfolio_variance(
+    const std::vector<double>& exposures,
+    const std::vector<std::vector<double>>& covariance) {
+  const std::size_t factor_count = exposures.size();
+
+  double variance = 0.0;
+
+  for (std::size_t i = 0; i < factor_count; ++i) {
+    for (std::size_t j = 0; j < factor_count; ++j) {
+      variance += exposures[i] * covariance[i][j] * exposures[j];
+    }
+  }
+
+  if (variance < -1e-8) {
+    throw std::invalid_argument("Portfolio variance cannot be negative.");
+  }
+
+  return std::max(variance, 0.0);
+}
+
+
 std::vector<double> MonteCarloEngine::simulate_losses(
     const std::vector<double>& exposures,
     const std::vector<std::vector<double>>& covariance,
@@ -84,44 +103,23 @@ std::vector<double> MonteCarloEngine::simulate_losses(
     std::uint32_t seed) {
   validate_inputs(exposures, covariance, simulations);
 
-  const std::size_t factor_count = exposures.size();
-  const auto lower = cholesky_decompose(covariance);
+  const double portfolio_variance = compute_portfolio_variance(exposures, covariance);
+  const double portfolio_volatility = std::sqrt(portfolio_variance);
 
   std::mt19937 generator(seed);
-  std::normal_distribution<double> standard_normal(0.0, 1.0);
+  std::normal_distribution<double> portfolio_normal(0.0, portfolio_volatility);
 
   std::vector<double> losses;
   losses.reserve(simulations);
 
   for (std::size_t path = 0; path < simulations; ++path) {
-    std::vector<double> independent_normals(factor_count, 0.0);
-    std::vector<double> correlated_returns(factor_count, 0.0);
-
-    for (std::size_t i = 0; i < factor_count; ++i) {
-      independent_normals[i] = standard_normal(generator);
-    }
-
-    for (std::size_t row = 0; row < factor_count; ++row) {
-      double value = 0.0;
-
-      for (std::size_t col = 0; col <= row; ++col) {
-        value += lower[row][col] * independent_normals[col];
-      }
-
-      correlated_returns[row] = value;
-    }
-
-    double pnl = 0.0;
-
-    for (std::size_t i = 0; i < factor_count; ++i) {
-      pnl += exposures[i] * correlated_returns[i];
-    }
-
+    const double pnl = portfolio_normal(generator);
     losses.push_back(-pnl);
   }
 
   return losses;
 }
+
 
 MonteCarloResult MonteCarloEngine::calculate_var_es(
     const std::vector<double>& exposures,
@@ -139,20 +137,43 @@ MonteCarloResult MonteCarloEngine::calculate_var_es(
       simulations,
       seed);
 
-  const double var_loss = VarEngine::historical_var(losses, confidence);
-  const double es_loss = ExpectedShortfallEngine::historical_es(losses, confidence);
+  if (losses.empty()) {
+    throw std::invalid_argument("Monte Carlo loss vector cannot be empty.");
+  }
+
+  const std::size_t n = losses.size();
+
+  std::size_t var_index = static_cast<std::size_t>(
+      std::ceil(confidence * static_cast<double>(n))) - 1;
+
+  if (var_index >= n) {
+    var_index = n - 1;
+  }
+
+  // nth_element partially orders the vector so the VaR element is in the
+  // correct sorted position, without fully sorting the entire loss vector.
+  // This is faster than sorting all simulated losses when only the tail is
+  // needed for VaR / ES.
+  std::nth_element(losses.begin(), losses.begin() + var_index, losses.end());
+
+  const double var_loss = losses[var_index];
+
+  double tail_sum = 0.0;
+  std::size_t tail_count = 0;
+
+  for (const double loss : losses) {
+    if (loss >= var_loss) {
+      tail_sum += loss;
+      ++tail_count;
+    }
+  }
+
+  const double es_loss =
+      tail_count > 0 ? tail_sum / static_cast<double>(tail_count) : var_loss;
 
   const double mean_loss =
       std::accumulate(losses.begin(), losses.end(), 0.0) /
       static_cast<double>(losses.size());
-
-  const auto tail_count = static_cast<std::size_t>(
-      std::count_if(
-          losses.begin(),
-          losses.end(),
-          [var_loss](double loss) {
-            return loss >= var_loss;
-          }));
 
   return MonteCarloResult{
       var_loss,
@@ -162,5 +183,4 @@ MonteCarloResult MonteCarloEngine::calculate_var_es(
       tail_count,
   };
 }
-
 }  // namespace frtb_lite
