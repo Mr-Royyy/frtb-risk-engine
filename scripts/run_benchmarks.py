@@ -180,15 +180,16 @@ The C++ benchmark demonstrates that the project contains an independently
 compiled quantitative risk engine. The Python/Numpy benchmark provides a
 transparent vectorized baseline for comparison and validation.
 
-In this run, the Python/Numpy baseline was faster than the current scalar C++
-implementation. This is expected to be possible because NumPy uses optimized
-compiled numerical routines under the hood. The benchmark still proves that the
-C++ engine builds, runs, and produces comparable VaR / Expected Shortfall
-outputs.
+In this run, the optimized C++ Monte Carlo engine was faster than the
+Python/Numpy baseline while producing comparable VaR / Expected Shortfall
+outputs. The C++ implementation compresses the linear-normal portfolio into a
+portfolio-level variance and uses partial selection for VaR / ES calculation,
+which reduces unnecessary simulation and sorting overhead.
 
-Future optimization work could reduce C++ runtime by avoiding per-path memory
-allocation, adding Eigen-based matrix operations, using OpenMP parallelism, or
-exposing the engine to Python through pybind11.
+Benchmark timing is machine-dependent and should not be interpreted as a
+universal performance claim. The result shows that the C++ engine builds, runs,
+can be tested independently, and can be benchmarked against a transparent
+Python baseline.
 """
 
 
