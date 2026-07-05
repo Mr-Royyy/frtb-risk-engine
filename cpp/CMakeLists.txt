@@ -20,6 +20,7 @@ add_library(frtb_lite_core
   src/stress_engine.cpp
   src/backtest_engine.cpp
   src/sensitivity_engine.cpp
+  src/monte_carlo_engine.cpp
 )
 
 target_include_directories(frtb_lite_core
