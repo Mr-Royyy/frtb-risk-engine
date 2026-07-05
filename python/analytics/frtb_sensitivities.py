@@ -45,6 +45,30 @@ BUCKET_RISK_WEIGHTS: dict[str, dict[str, float]] = {
     "DEFAULT": {"delta": 0.30, "vega": 0.21, "curvature": 1.00},
 }
 
+def get_position_multiplier(position: pd.Series, default: float = 1.0) -> float:
+    """
+    Return the position multiplier.
+
+    The sample portfolio uses multiplier=100 for equity options and 1 for
+    linear instruments.
+    """
+    multiplier = position.get("multiplier", default)
+
+    if pd.isna(multiplier):
+        return default
+
+    return float(multiplier)
+
+
+def calculate_position_market_value(position: pd.Series) -> float:
+    """
+    Calculate market value using quantity, price, and multiplier.
+    """
+    return float(
+        position["quantity"]
+        * position["price"]
+        * get_position_multiplier(position)
+    )
 
 def normal_cdf(x: float) -> float:
     """Return the standard normal cumulative distribution function."""
@@ -260,7 +284,7 @@ def compute_frtb_lite_sensitivities(
     for _, position in portfolio.iterrows():
         ticker = str(position["ticker"])
         asset_type = str(position["asset_type"])
-        market_value = float(position["quantity"] * position["price"])
+        market_value = calculate_position_market_value(position)
 
         if ticker in factors_by_ticker.index:
             bucket = str(factors_by_ticker.loc[ticker, "bucket"]).strip()
@@ -292,7 +316,7 @@ def compute_frtb_lite_sensitivities(
                 risk_free_rate=risk_free_rate,
                 implied_volatility=implied_volatility,
                 equity_shock=equity_shock,
-                option_multiplier=option_multiplier,
+                option_multiplier=int(get_position_multiplier(position, option_multiplier)),
                 valuation_date=valuation_date,
             )
 
@@ -430,10 +454,21 @@ def main() -> int:
     print(f"Total capital-style charge: {bucket_summary['capital_style_charge'].sum():,.2f}")
     print()
     print("Bucket summary")
+    numeric_formatters = {
+        "market_value": "{:,.2f}".format,
+        "delta_exposure": "{:,.2f}".format,
+        "vega_exposure": "{:,.2f}".format,
+        "curvature_exposure": "{:,.2f}".format,
+        "weighted_delta": "{:,.2f}".format,
+        "weighted_vega": "{:,.2f}".format,
+        "weighted_curvature": "{:,.2f}".format,
+        "capital_style_charge": "{:,.2f}".format,
+    }
+
     print(
         bucket_summary.to_string(
             index=False,
-            formatters={"capital_style_charge": "{:,.2f}".format},
+            formatters=numeric_formatters,
         )
     )
     print()

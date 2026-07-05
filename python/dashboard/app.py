@@ -74,7 +74,20 @@ returns = calculate_returns(prices)
 pnl = compute_portfolio_pnl(portfolio, returns, factors)
 losses = -pnl
 
-market_value = float((portfolio["quantity"] * portfolio["price"]).sum())
+portfolio_for_market_value = portfolio.copy()
+
+if "multiplier" not in portfolio_for_market_value.columns:
+    portfolio_for_market_value["multiplier"] = 1.0
+
+portfolio_for_market_value["multiplier"] = portfolio_for_market_value["multiplier"].fillna(1.0)
+
+market_value = float(
+    (
+        portfolio_for_market_value["quantity"]
+        * portfolio_for_market_value["price"]
+        * portfolio_for_market_value["multiplier"]
+    ).sum()
+)
 var_99 = historical_var(losses, 0.99)
 es_975 = expected_shortfall(losses, 0.975)
 stress = compute_stress_losses(portfolio, factors, scenarios)
@@ -162,11 +175,20 @@ with tab_overview:
 
     with right:
         portfolio_view = portfolio.copy()
-        portfolio_view["market_value"] = portfolio_view["quantity"] * portfolio_view["price"]
+        if "multiplier" not in portfolio_view.columns:
+            portfolio_view["multiplier"] = 1.0
+
+        portfolio_view["multiplier"] = portfolio_view["multiplier"].fillna(1.0)
+
+        portfolio_view["market_value"] = (
+            portfolio_view["quantity"]
+            * portfolio_view["price"]
+            * portfolio_view["multiplier"]
+        )
         portfolio_view = portfolio_view.sort_values("market_value", ascending=False)
         st.dataframe(
             portfolio_view[
-                ["position_id", "asset_type", "ticker", "quantity", "price", "currency", "market_value"]
+                ["position_id", "asset_type", "ticker", "quantity", "price", "multiplier", "currency", "market_value"]
             ],
             use_container_width=True,
             hide_index=True,

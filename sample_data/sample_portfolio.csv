@@ -1,9 +1,9 @@
-position_id,asset_type,ticker,quantity,price,currency,sector,asset_class,option_type,strike,maturity
-P001,Equity,AAPL,100,210.50,USD,Technology,Equity,,,
-P002,Equity,MSFT,75,430.20,USD,Technology,Equity,,,
-P003,ETF,SPY,50,545.10,USD,Broad Market,Equity,,,
-P004,FX,USDCAD,10000,1.37,CAD,FX,FX,,,
-P005,Option,AAPL_CALL_230,10,8.20,USD,Technology,Equity,Call,230,2026-12-18
-P006,Equity,JPM,80,198.10,USD,Financials,Equity,,,
-P007,ETF,QQQ,40,465.30,USD,Technology,Equity,,,
-P008,Equity,SHOP,120,92.40,CAD,Technology,Equity,,,
+position_id,asset_type,ticker,quantity,price,currency,sector,asset_class,option_type,strike,maturity,multiplier
+P001,Equity,AAPL,100,210.50,USD,Technology,Equity,,,,1
+P002,Equity,MSFT,75,430.20,USD,Technology,Equity,,,,1
+P003,ETF,SPY,50,545.10,USD,Broad Market,Equity,,,,1
+P004,FX,USDCAD,10000,1.37,CAD,FX,FX,,,,1
+P005,Option,AAPL_CALL_230,10,8.20,USD,Technology,Equity,Call,230,2026-12-18,100
+P006,Equity,JPM,80,198.10,USD,Financials,Equity,,,,1
+P007,ETF,QQQ,40,465.30,USD,Technology,Equity,,,,1
+P008,Equity,SHOP,120,92.40,CAD,Technology,Equity,,,,1

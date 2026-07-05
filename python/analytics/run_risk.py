@@ -68,11 +68,35 @@ def load_scenarios(path: Path) -> dict[str, Any]:
 
 
 def position_market_values(portfolio: pd.DataFrame) -> pd.Series:
-    """Return market value by ticker using quantity * price."""
+    """Return market value by ticker using quantity * price * multiplier."""
     portfolio = portfolio.copy()
-    portfolio["market_value"] = portfolio["quantity"] * portfolio["price"]
+    portfolio["market_value"] = portfolio.apply(calculate_position_market_value, axis=1)
     return portfolio.groupby("ticker")["market_value"].sum()
 
+def get_position_multiplier(position: pd.Series) -> float:
+    """
+    Return the position multiplier.
+
+    Equities, ETFs, and FX usually use a multiplier of 1.
+    Listed equity options commonly use a contract multiplier of 100.
+    """
+    multiplier = position.get("multiplier", 1.0)
+
+    if pd.isna(multiplier):
+        return 1.0
+
+    return float(multiplier)
+
+
+def calculate_position_market_value(position: pd.Series) -> float:
+    """
+    Calculate market value using quantity, price, and multiplier.
+    """
+    return float(
+        position["quantity"]
+        * position["price"]
+        * get_position_multiplier(position)
+    )
 
 def compute_portfolio_pnl(
     portfolio: pd.DataFrame,
@@ -80,19 +104,17 @@ def compute_portfolio_pnl(
     factors: pd.DataFrame,
 ) -> pd.Series:
     """
-    Compute a simple historical P&L vector from direct ticker returns.
+    Compute a simple historical P&L vector from mapped ticker returns.
 
-    For the MVP, each position is primarily driven by its own ticker when that
-    ticker exists in the price matrix. For an option ticker, this starter maps
-    the option to the underlying factor by stripping the sample naming pattern.
-    Future work should replace this with full option repricing.
+    Market value uses quantity * price * multiplier. This allows option rows to
+    use a contract multiplier such as 100 while linear instruments use 1.
     """
     factors_by_ticker = factors.set_index("ticker")
     pnl = pd.Series(0.0, index=returns.index)
 
     for _, row in portfolio.iterrows():
         ticker = row["ticker"]
-        market_value = float(row["quantity"] * row["price"])
+        market_value = calculate_position_market_value(row)
 
         if ticker in returns.columns:
             risk_column = ticker
@@ -105,7 +127,6 @@ def compute_portfolio_pnl(
         if risk_column not in returns.columns:
             continue
 
-        # Linear P&L approximation: position market value multiplied by historical return.
         pnl += market_value * returns[risk_column].fillna(0.0)
 
     return pnl
@@ -150,7 +171,7 @@ def compute_es_contributions(
     for _, position in portfolio.iterrows():
         ticker = str(position["ticker"])
         position_id = str(position["position_id"])
-        market_value = float(position["quantity"] * position["price"])
+        market_value = calculate_position_market_value(position)
 
         if ticker in factors_by_ticker.index:
             primary_factor = str(factors_by_ticker.loc[ticker, "primary_factor"])
@@ -194,7 +215,7 @@ def compute_es_contributions(
         position_id = str(position["position_id"])
         ticker = str(position["ticker"])
         asset_type = str(position["asset_type"])
-        market_value = float(position["quantity"] * position["price"])
+        market_value = calculate_position_market_value(position)
         contribution = float(es_by_position.get(position_id, 0.0))
 
         contribution_pct = contribution / total_es if total_es != 0 else 0.0
@@ -235,7 +256,7 @@ def compute_stress_losses(
 
         for _, position in portfolio.iterrows():
             ticker = position["ticker"]
-            market_value = float(position["quantity"] * position["price"])
+            market_value = calculate_position_market_value(position)
 
             if ticker not in factor_map.index:
                 continue
@@ -292,7 +313,7 @@ def compute_stress_detail(
         for _, position in portfolio.iterrows():
             ticker = str(position["ticker"])
             asset_type = str(position["asset_type"])
-            market_value = float(position["quantity"] * position["price"])
+            market_value = calculate_position_market_value(position)
 
             if ticker in factors_by_ticker.index:
                 primary_factor = str(factors_by_ticker.loc[ticker, "primary_factor"])
@@ -370,7 +391,9 @@ def main() -> int:
 
     var_99 = historical_var(losses, confidence=0.99)
     es_975 = expected_shortfall(losses, confidence=0.975)
-    market_value = float((portfolio["quantity"] * portfolio["price"]).sum())
+    market_value = float(
+        portfolio.apply(calculate_position_market_value, axis=1).sum()
+    )
     stress = compute_stress_losses(portfolio, factors, scenarios)
 
     print("FRTB-Lite Risk Run")
