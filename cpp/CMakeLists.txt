@@ -76,3 +76,27 @@ target_include_directories(monte_carlo_benchmark
   PRIVATE
     include
 )
+
+find_package(Python COMPONENTS Interpreter Development REQUIRED)
+
+execute_process(
+  COMMAND ${Python_EXECUTABLE} -m pybind11 --cmakedir
+  OUTPUT_VARIABLE pybind11_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+find_package(pybind11 CONFIG REQUIRED)
+
+pybind11_add_module(frtb_lite_cpp
+  bindings/risk_engine_pybind.cpp
+)
+
+target_link_libraries(frtb_lite_cpp
+  PRIVATE
+    frtb_lite_core
+)
+
+target_include_directories(frtb_lite_cpp
+  PRIVATE
+    include
+)
