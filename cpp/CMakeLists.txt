@@ -62,3 +62,17 @@ if(BUILD_PYTHON_BINDINGS)
       frtb_lite_core
   )
 endif()
+
+add_executable(monte_carlo_benchmark
+  tools/monte_carlo_benchmark.cpp
+)
+
+target_link_libraries(monte_carlo_benchmark
+  PRIVATE
+    frtb_lite_core
+)
+
+target_include_directories(monte_carlo_benchmark
+  PRIVATE
+    include
+)
