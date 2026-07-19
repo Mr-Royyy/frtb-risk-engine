@@ -1,68 +1,57 @@
 # FRTB-Lite Market Risk Engine
 
-I built this project as a lightweight market-risk engine and dashboard inspired by FRTB/Basel market-risk concepts. It is not meant to be a full regulatory capital calculator. The goal was to build something that feels closer to a real internal risk tool instead of a simple VaR notebook or stock prediction project.
+A lightweight market-risk analytics and model-validation terminal built with a C++20 quantitative core and a Python analytics/dashboard layer.
 
-The project takes a sample portfolio, maps positions to risk factors, calculates VaR and Expected Shortfall, runs stress scenarios, breaks down risk by bucket and position, backtests the model, and shows the results in a Streamlit dashboard.
+The project is inspired by Basel/FRTB market-risk concepts, but it is not a full regulatory capital implementation. It focuses on practical market-risk workflows: portfolio ingestion, risk-factor mapping, VaR, Expected Shortfall, stress testing, simplified FRTB-style sensitivities, backtesting, regime detection, and dashboard reporting.
 
-## What I built
+## Overview
 
-The main idea is a small market-risk terminal with two layers:
+The engine takes a sample multi-asset portfolio, maps each position to relevant risk factors, calculates portfolio risk measures, runs stress scenarios, validates VaR forecasts, and presents the results in a Streamlit dashboard.
 
-- A C++20 risk engine for performance-focused quantitative calculations.
-- A Python layer for data loading, analytics, reporting, testing, and the dashboard.
+The project is structured around three main areas:
 
-The project currently includes:
+- **Risk analytics:** VaR, Expected Shortfall, stress testing, risk contribution, and sensitivities.
+- **Model validation:** rolling VaR backtesting, exception tracking, Kupiec coverage testing, and validation reports.
+- **Quant engineering:** C++ risk engine, Python analytics layer, pybind11 bindings, tests, benchmarks, and CI.
+
+## Current features
 
 - Portfolio ingestion from CSV
 - Risk-factor mapping
 - Historical VaR
 - Expected Shortfall
 - Expected Shortfall contribution by position
-- Stress scenario testing
+- Preset stress scenario testing
 - Position-level stress drilldowns
 - Simplified FRTB-lite delta, vega, and curvature-style sensitivities
 - Bucket-level capital-style charges
 - Rolling VaR backtesting
-- Kupiec coverage testing
+- VaR exception tracking and severity analysis
+- Kupiec unconditional coverage test
 - Market-regime detection
 - C++ Monte Carlo VaR / Expected Shortfall engine
-- Python bindings for the C++ engine using pybind11
+- Python wrapper for the C++ engine through pybind11
 - C++ and Python benchmark workflow
 - Streamlit dashboard
-- Python and C++ tests
+- Python and C++ test suites
 - GitHub Actions CI
 
-## Why I made it
+## Supported sample instruments
 
-A lot of finance projects are based around predicting stock prices. I wanted to build something more related to risk, quant development, and model validation.
-
-The project is meant to show that I can:
-
-- Work with market-risk concepts like VaR, ES, stress testing, and backtesting.
-- Build a C++ quantitative engine instead of only using Python notebooks.
-- Connect C++ to Python using pybind11.
-- Build a dashboard that explains the risk outputs clearly.
-- Write tests and benchmark the engine.
-- Document the assumptions and limitations of the model.
-
-## Current scope
-
-The sample portfolio supports:
+The current sample portfolio includes:
 
 - Equities
 - ETFs
 - FX exposure
 - Simple European-style options
 
-The option rows use a contract multiplier, so an option position like:
+Option positions use a contract multiplier. For example:
 
 ```text
 10 contracts × $8.20 premium × 100 multiplier = $8,200 market value
 ```
 
-is treated more realistically in the portfolio market value.
-
-The project intentionally does not include full FRTB regulatory bucketing, complete rates curve construction, credit default risk capital, exotic derivatives, securitizations, or production model-governance workflows.
+This keeps the sample portfolio closer to how listed equity options are normally represented.
 
 ## Repo structure
 
@@ -90,7 +79,7 @@ frtb-lite-risk-engine/
 
 ## Python setup
 
-From the project root:
+Create a virtual environment:
 
 ```powershell
 python -m venv .venv
@@ -108,7 +97,7 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-## Running the main Python workflows
+## Main Python workflows
 
 Validate the sample portfolio:
 
@@ -154,7 +143,7 @@ python -m streamlit run python\dashboard\app.py
 
 ## Dashboard
 
-The dashboard has these tabs:
+The Streamlit dashboard includes six tabs:
 
 ```text
 Portfolio Overview
@@ -165,13 +154,13 @@ Regime Detection
 Methodology
 ```
 
-The dashboard shows the main risk story of the portfolio: total market value, VaR, Expected Shortfall, worst stress loss, FRTB-lite charge, stress scenario losses, sensitivity buckets, VaR exceptions, validation status, and market-regime signals.
+The dashboard shows portfolio market value, VaR, Expected Shortfall, worst stress loss, FRTB-lite charge, stress scenario losses, bucket-level sensitivities, VaR exceptions, validation status, regime signals, and methodology notes.
 
-## C++ setup
+## C++ build
 
-On Windows, I used MSVC Build Tools, CMake, and Developer PowerShell for VS 2022.
+On Windows, use Developer PowerShell for VS 2022 or make sure MSVC Build Tools and CMake are available in the terminal.
 
-Build the C++ project:
+Build the C++ project on Windows:
 
 ```powershell
 cmake -S cpp -B cpp\build -G "Visual Studio 17 2022" -A x64
@@ -190,9 +179,17 @@ Run the C++ Monte Carlo benchmark:
 .\cpp\build\Release\monte_carlo_benchmark.exe
 ```
 
+For Linux/macOS or CI-style builds:
+
+```bash
+cmake -S cpp -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
 ## Benchmarking
 
-I added a benchmark workflow to compare the C++ Monte Carlo VaR / Expected Shortfall engine with a Python/NumPy baseline.
+The benchmark workflow compares the C++ Monte Carlo VaR / Expected Shortfall engine with a Python/NumPy baseline.
 
 Run the Python baseline:
 
@@ -212,9 +209,9 @@ The generated report is written to:
 reports/benchmark_results.md
 ```
 
-In my local benchmark, the optimized C++ Monte Carlo engine ran faster than the Python/NumPy baseline while producing comparable VaR and Expected Shortfall numbers.
+The optimized C++ engine uses portfolio-variance compression for the linear-normal Monte Carlo case and partial selection for VaR / ES calculation. This avoids unnecessary full path construction and full sorting in the benchmark workflow.
 
-The C++ engine was optimized by compressing the linear-normal portfolio into a portfolio-level variance and using partial selection for VaR / ES calculation instead of doing unnecessary full sorting.
+Benchmark timings depend on the machine, compiler, build mode, and background processes, so the report should be read as a reproducible project benchmark rather than a universal performance claim.
 
 ## Testing
 
@@ -230,7 +227,7 @@ Run all C++ tests:
 ctest --test-dir cpp\build --output-on-failure -C Release
 ```
 
-The tests cover:
+The test suite covers:
 
 - FRTB-lite sensitivities
 - Black-Scholes option Greeks
@@ -251,11 +248,11 @@ Historical VaR is calculated from the empirical distribution of daily portfolio 
 
 ### Expected Shortfall
 
-Expected Shortfall is calculated as the average loss beyond the selected VaR threshold. This gives more information about tail-loss severity than VaR alone.
+Expected Shortfall is calculated as the average loss beyond the selected VaR threshold. This provides information about the severity of tail losses beyond the VaR cutoff.
 
 ### Stress testing
 
-Stress scenarios apply predefined shocks to mapped risk factors. The output shows both total stress loss and position-level stress detail.
+Stress testing applies predefined shocks to mapped risk factors. The project includes portfolio-level stress losses and position-level stress drilldowns.
 
 ### FRTB-lite sensitivities
 
@@ -266,7 +263,7 @@ The FRTB-lite module calculates simplified:
 - Curvature-style option exposure
 - Bucket-level capital-style charge
 
-This is only an educational approximation of standardized market-risk concepts. It is not a full Basel/FRTB implementation.
+This is an educational approximation of standardized market-risk concepts. It does not reproduce the full Basel/FRTB rulebook.
 
 ### Backtesting
 
@@ -282,11 +279,11 @@ The regime detection module classifies the market environment as calm, normal, v
 - Return dispersion
 - Volatility-of-volatility
 
-The goal is to connect market-regime awareness to model validation and risk monitoring.
+This connects market-regime monitoring with model validation and risk reporting.
 
-## Main outputs
+## Generated outputs
 
-The project generates:
+The project can generate:
 
 - Dashboard risk views
 - Stress scenario results
@@ -296,21 +293,36 @@ The project generates:
 - Model-validation report
 - Regime detection output
 - Benchmark report
-- C++ and Python test results
+- Python and C++ test results
 
-## What I learned
+## Example output
 
-This project helped me learn how to connect finance concepts with software engineering. I worked through portfolio data design, risk-factor mapping, VaR/ES calculations, stress testing, option sensitivity logic, model backtesting, C++ performance work, pybind11 bindings, Streamlit dashboard design, CMake builds, CI issues, and benchmark reporting.
+A sample run produces:
 
-It also helped me understand how to explain model limitations. The project produces useful risk analytics, but it is still a simplified educational engine, not a production risk system.
+```text
+Portfolio market value: 148,018.00
+1-day 99% historical VaR: 2,632.28
+1-day 97.5% Expected Shortfall: 2,388.27
+```
 
-## Resume bullets
+The backtesting module produces a validation summary with the number of valid observations, VaR exceptions, observed exception rate, Kupiec p-value, and validation status.
 
-Built an FRTB-inspired C++/Python market-risk engine calculating VaR, Expected Shortfall, stress losses, and simplified delta/vega/curvature-style sensitivities across multi-asset portfolios, with model backtesting, market-regime detection, and a Streamlit risk dashboard.
+The regime detection module returns the latest market regime label, regime score, and a short risk-monitoring interpretation.
 
-Implemented a C++ Monte Carlo VaR / Expected Shortfall engine with pybind11 bindings and benchmark tooling against a Python/NumPy baseline, optimizing the calculation path and validating outputs through C++ and Python tests.
+## Project limitations
 
-Developed a model-validation layer with rolling historical VaR forecasts, realized P&L comparison, exception tracking, Kupiec coverage testing, and generated Markdown validation reports.
+This is a simplified educational risk engine. It does not include:
+
+- Full Basel/FRTB regulatory bucketing
+- Complete prescribed risk weights and correlations
+- Full rates curve construction
+- Credit default risk capital
+- Residual risk add-on
+- Non-modellable risk factor treatment
+- Trading desk approval workflow
+- P&L attribution testing
+- Production data governance controls
+- Exotic derivatives or full option surface modelling
 
 ## Disclaimer
 
